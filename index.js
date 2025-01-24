@@ -12,13 +12,18 @@ const port = process.env.PORT || 5000;
 
 app.use(cors());
 
+// Middleware to parse URL-encoded bodies (e.g., form submissions)
 app.use(express.urlencoded({ extended: true }));
 app.use(express.static("public"));
 app.get("/", (_, res) =>
 	res.sendFile(path.join(__dirname, "public", "initiatePaymentDataForm.html"))
 );
 
+// Middleware to parse JSON bodies
+app.use(express.json());
+
 app.post("/initiatePayment", async (req, res) => {
+	console.log(req.body);
 	const orderId = req.body.orderId;
 	// const orderId = `order_${Date.now()}`;
 	const amount = req.body.amount;
