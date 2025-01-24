@@ -43,6 +43,7 @@ app.post("/initiatePayment", async (req, res) => {
 		return res.send({ orderSessionResp });
 		// return res.redirect(orderSessionResp.payment_links.web);
 	} catch (error) {
+		console.log(error);
 		// [MERCHANT_TODO]:- please handle errors
 		if (error instanceof APIException) {
 			return res.send("PaymentHandler threw some error");
