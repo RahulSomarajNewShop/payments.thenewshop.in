@@ -133,6 +133,13 @@ app.post("/handlePaymentResponse", async (req, res) => {
     // res.set("Content-Type", "text/html");
     // return res.send(html);
     // 303 See Other after a GET is fine too
+    const passed = orderStatus === "CHARGED";
+    const redirectUrl = new URL("/orders", FRONTEND_BASE);
+
+    // pass whatever you need via query-string (or hash)
+    redirectUrl.searchParams.set("orderId", orderId);
+    redirectUrl.searchParams.set("status", passed ? "success" : "failed");
+
     return res.redirect(303, redirectUrl.toString());
   } catch (error) {
     console.error(error);
