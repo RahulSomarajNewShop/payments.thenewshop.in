@@ -26,7 +26,7 @@ app.use(express.json());
 
 app.post("/initiatePayment", async (req, res) => {
   console.log(req.body);
-  const orderId = req.body.order_id;
+  const orderId = req.body.order_id ?? req.body.orderId;
 
   // const orderId = `order_${Date.now()}`;
   // const amount = req.body.amount;
