@@ -124,14 +124,16 @@ app.post("/handlePaymentResponse", async (req, res) => {
         break;
     }
 
-    const html = makeOrderStatusResponse(
-      "Merchant Payment Response Page",
-      message,
-      req,
-      orderStatusResp
-    );
-    res.set("Content-Type", "text/html");
-    return res.send(html);
+    // const html = makeOrderStatusResponse(
+    //   "Merchant Payment Response Page",
+    //   message,
+    //   req,
+    //   orderStatusResp
+    // );
+    // res.set("Content-Type", "text/html");
+    // return res.send(html);
+    // 303 See Other after a GET is fine too
+    return res.redirect(303, redirectUrl.toString());
   } catch (error) {
     console.error(error);
     // [MERCHANT_TODO]:- please handle errors
