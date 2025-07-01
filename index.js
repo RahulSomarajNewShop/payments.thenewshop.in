@@ -26,7 +26,8 @@ app.use(express.json());
 
 app.post("/initiatePayment", async (req, res) => {
   console.log(req.body);
-  const orderId = req.body.orderId;
+  const orderId = req.body.order_id;
+
   // const orderId = `order_${Date.now()}`;
   // const amount = req.body.amount;
   const amount = 1 + crypto.randomInt(100);
@@ -83,6 +84,8 @@ app.post("/handlePaymentResponse", async (req, res) => {
   console.log("req.body");
   console.log("req.body");
   console.log("req.body");
+  const FRONTEND_BASE =
+    process.env.FRONTEND_BASE_URL || "https://uatb2b.thenewshop.in";
   const orderId = req.body.order_id || req.body.orderId;
   const paymentHandler = PaymentHandler.getInstance();
 
