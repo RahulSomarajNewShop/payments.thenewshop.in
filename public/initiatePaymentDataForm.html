@@ -12,8 +12,8 @@
         <tr>
           <td>Merchant Checkout Page</td>
           <td>
-            This are just example value, initiatePayment route will randomly
-            generate order_id and amount for demo purposes.
+            This are just example values, initiatePayment route will randomly
+            generate order_id, po_id, customer_id and amount for demo purposes.
           </td>
         </tr>
         <tr></tr>
@@ -33,6 +33,30 @@
           <td>order_id (required)</td>
           <td>
             <input type="text" name="order_id" id="order_id" value="" />
+          </td>
+        </tr>
+        <tr>
+          <td>po_id (Purchase Order ID)</td>
+          <td>
+            <input
+              type="text"
+              name="poId"
+              id="poId"
+              value=""
+              placeholder="Enter Purchase Order ID"
+            />
+          </td>
+        </tr>
+        <tr>
+          <td>customer_id</td>
+          <td>
+            <input
+              type="text"
+              name="customerId"
+              id="customerId"
+              value=""
+              placeholder="Enter Customer ID"
+            />
           </td>
         </tr>
         <tr>
@@ -72,6 +96,9 @@
     </form>
     <script>
       document.getElementById("order_id").value = "ord_" + Date.now();
+      document.getElementById("poId").value = Math.floor(Math.random() * 1000);
+      document.getElementById("customerId").value =
+        "customer_" + Math.floor(Math.random() * 10000);
     </script>
   </body>
 </html>

@@ -80,11 +80,11 @@ app.post("/initiatePayment", async (req, res) => {
   // Insert orderId, poId, and amount into the database
   try {
     await query(
-      "INSERT INTO payment_orders (order_id, po_id, amount, customer_id, return_url) VALUES ($1, $2, $3, $4, $5)",
-      [orderId, poId, amount, customerId, returnUrl]
+      `INSERT INTO payment_orders (order_id, amount, customer_id, return_url) VALUES ($1, $2, $3, $4)`,
+      [orderId, amount, customerId, returnUrl]
     );
     console.log(
-      `Order ${orderId} with PO ID ${poId} and amount ${amount} stored in database successfully`
+      `Order ${orderId} with amount ${amount} stored in database successfully`
     );
   } catch (dbError) {
     console.error("Failed to insert order into database:", dbError);
