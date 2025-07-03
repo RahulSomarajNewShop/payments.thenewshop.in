@@ -20,9 +20,11 @@ app.get("/test/generateOrder", (req, res) => {
   const orderId = `test_order_${Date.now()}_${Math.random()
     .toString(36)
     .substr(2, 9)}`;
+  const poId = `PO_${Date.now()}_${Math.floor(Math.random() * 1000)}`;
 
   res.json({
     order_id: orderId,
+    po_id: poId,
     amount: randomAmount,
     customer_id: `test_customer_${Math.floor(Math.random() * 1000)}`,
     message: "Use these parameters to test payment flow",
@@ -66,26 +68,23 @@ app.get("/", (_, res) =>
 app.use(express.json());
 
 app.post("/initiatePayment", async (req, res) => {
-  console.log(req.body);
+  console.log("Payment initiation request:", req.body);
   const orderId = req.body.order_id ?? req.body.orderId;
-
-  // const orderId = `order_${Date.now()}`;
-  // const amount = req.body.amount;
-  const amount = 1 + crypto.randomInt(100);
-  // const returnUrl = req.body.returnUrl;
+  const poId = req.body.poId; // Purchase Order ID
+  const amount = req.body.amount || 1 + crypto.randomInt(100);
   const customerId = req.body.customerId;
   const returnUrl = `https://uatpayments.thenewshop.in/handlePaymentResponse`;
-  console.log(returnUrl);
+  console.log("Return URL:", returnUrl);
   const paymentHandler = PaymentHandler.getInstance();
 
-  // Insert orderId and amount into the database
+  // Insert orderId, poId, and amount into the database
   try {
     await query(
-      "INSERT INTO payment_orders (order_id, amount) VALUES ($1, $2)",
-      [orderId, amount]
+      "INSERT INTO payment_orders (order_id, po_id, amount, customer_id, return_url) VALUES ($1, $2, $3, $4, $5)",
+      [orderId, poId, amount, customerId, returnUrl]
     );
     console.log(
-      `Order ${orderId} with amount ${amount} stored in database successfully`
+      `Order ${orderId} with PO ID ${poId} and amount ${amount} stored in database successfully`
     );
   } catch (dbError) {
     console.error("Failed to insert order into database:", dbError);
@@ -106,7 +105,33 @@ app.post("/initiatePayment", async (req, res) => {
       // PaymentHandler will read it from config.json file
       payment_page_client_id: paymentHandler.getPaymentPageClientId(),
     });
-    console.log(orderSessionResp);
+    console.log("Order session response:", orderSessionResp);
+
+    // Update the order with complete session details
+    await query(
+      `UPDATE payment_orders SET 
+       status = $1, 
+       payment_page_client_id = $2,
+       session_data = $3,
+       session_id = $4,
+       payment_links = $5,
+       order_expiry = $6,
+       sdk_payload = $7,
+       updated_at = CURRENT_TIMESTAMP
+       WHERE order_id = $8`,
+      [
+        orderSessionResp.status,
+        paymentHandler.getPaymentPageClientId(),
+        JSON.stringify(orderSessionResp),
+        orderSessionResp.id,
+        JSON.stringify(orderSessionResp.payment_links),
+        orderSessionResp.order_expiry,
+        JSON.stringify(orderSessionResp.sdk_payload),
+        orderId,
+      ]
+    );
+    console.log(`Order ${orderId} session data saved successfully`);
+
     return res.send({ orderSessionResp });
     // return res.redirect(orderSessionResp.payment_links.web);
   } catch (error) {
@@ -118,7 +143,7 @@ app.post("/initiatePayment", async (req, res) => {
     // [MERCHANT_TODO]:- please handle errors
     return res.send("Something went wrong");
   }
-});
+}); ///send back the hdfc pay link
 
 app.post("/handlePaymentResponse", async (req, res) => {
   /// this should be the return url
@@ -148,8 +173,6 @@ app.post("/handlePaymentResponse", async (req, res) => {
     console.log("Fetching order status from payment gateway...");
     const orderStatusResp = await paymentHandler.orderStatus(orderId);
     console.log("Order status response:", orderStatusResp);
-
-    
 
     // Step 3: Validate order exists in database and amount matches
     console.log("Validating order in database...");
@@ -244,7 +267,7 @@ app.post("/handlePaymentResponse", async (req, res) => {
     // [MERCHANT_TODO]:- please handle errors
     return res.status(500).send("Something went wrong");
   }
-});
+}); //
 
 // Status API endpoint for dual inquiry (Mandatory)
 app.get("/orderStatus/:orderId", async (req, res) => {

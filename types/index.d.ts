@@ -2,11 +2,18 @@
 
 export interface PaymentOrderData {
   order_id: string;
+  po_id?: string;
   amount: number;
   currency?: string;
   customer_id?: string;
   payment_page_client_id?: string;
   return_url?: string;
+  status?: string;
+  session_data?: any;
+  session_id?: string;
+  payment_links?: any;
+  order_expiry?: string;
+  sdk_payload?: any;
 }
 
 export interface PaymentTransactionData {
