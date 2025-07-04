@@ -1,0 +1,665 @@
+{
+  "openapi": "3.0.0",
+  "info": {
+    "title": "Payment Gateway Integration API",
+    "description": "API for integrating with HDFC payment gateway, including payment initiation, status checking, and refund processing",
+    "version": "1.0.0",
+    "contact": {
+      "name": "API Support",
+      "email": "support@thenewshop.in"
+    }
+  },
+  "servers": [
+    {
+      "url": "http://localhost:5000",
+      "description": "Development server"
+    },
+    {
+      "url": "https://uatpayments.thenewshop.in",
+      "description": "UAT server"
+    }
+  ],
+  "paths": {
+    "/": {
+      "get": {
+        "summary": "Serve payment initiation form",
+        "description": "Serves the HTML form for initiating payments",
+        "responses": {
+          "200": {
+            "description": "HTML form page",
+            "content": {
+              "text/html": {
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/test/generateOrder": {
+      "get": {
+        "summary": "Generate test order data",
+        "description": "Generates random test order data for testing payment flows",
+        "tags": ["Testing"],
+        "responses": {
+          "200": {
+            "description": "Test order data generated successfully",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "order_id": {
+                      "type": "string",
+                      "description": "Generated order ID for testing"
+                    },
+                    "po_id": {
+                      "type": "string",
+                      "description": "Generated purchase order ID"
+                    },
+                    "amount": {
+                      "type": "number",
+                      "description": "Random test amount"
+                    },
+                    "customer_id": {
+                      "type": "string",
+                      "description": "Generated customer ID for testing"
+                    },
+                    "message": {
+                      "type": "string",
+                      "description": "Instructions for using the test data"
+                    }
+                  }
+                },
+                "example": {
+                  "order_id": "test_order_1703123456789_abc123def",
+                  "po_id": "PO_1703123456789_456",
+                  "amount": 100,
+                  "customer_id": "test_customer_789",
+                  "message": "Use these parameters to test payment flow"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/test/orders": {
+      "get": {
+        "summary": "View all orders and transactions",
+        "description": "Retrieves all orders, transactions, and refunds from the database for testing purposes",
+        "tags": ["Testing"],
+        "responses": {
+          "200": {
+            "description": "All orders and transactions retrieved successfully",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "orders": {
+                      "type": "array",
+                      "items": {
+                        "$ref": "#/components/schemas/PaymentOrder"
+                      }
+                    },
+                    "transactions": {
+                      "type": "array",
+                      "items": {
+                        "$ref": "#/components/schemas/PaymentTransaction"
+                      }
+                    },
+                    "refunds": {
+                      "type": "array",
+                      "items": {
+                        "$ref": "#/components/schemas/Refund"
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "Internal server error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/initiatePayment": {
+      "post": {
+        "summary": "Initiate payment",
+        "description": "Creates a new payment order and initiates the payment process with the payment gateway",
+        "tags": ["Payments"],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "required": ["order_id"],
+                "properties": {
+                  "order_id": {
+                    "type": "string",
+                    "description": "Unique order identifier",
+                    "example": "order_123456789"
+                  },
+                  "orderId": {
+                    "type": "string",
+                    "description": "Alternative field name for order_id",
+                    "example": "order_123456789"
+                  },
+                  "poId": {
+                    "type": "string",
+                    "description": "Purchase Order ID (optional)",
+                    "example": "PO_20231201_001"
+                  },
+                  "amount": {
+                    "type": "number",
+                    "description": "Payment amount in INR (if not provided, random amount will be generated)",
+                    "example": 100
+                  },
+                  "customerId": {
+                    "type": "string",
+                    "description": "Customer identifier",
+                    "example": "cust_12345"
+                  }
+                }
+              },
+              "example": {
+                "order_id": "order_123456789",
+                "amount": 100,
+                "customerId": "cust_12345"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Payment initiated successfully",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "orderSessionResp": {
+                      "$ref": "#/components/schemas/OrderSessionResponse"
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "Internal server error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/handlePaymentResponse": {
+      "post": {
+        "summary": "Handle payment response",
+        "description": "Webhook endpoint that receives payment response from the payment gateway and processes the result",
+        "tags": ["Payments"],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "order_id": {
+                    "type": "string",
+                    "description": "Order identifier from payment gateway"
+                  },
+                  "orderId": {
+                    "type": "string",
+                    "description": "Alternative field name for order_id"
+                  },
+                  "transaction_id": {
+                    "type": "string",
+                    "description": "Transaction identifier from payment gateway"
+                  },
+                  "amount": {
+                    "type": "string",
+                    "description": "Payment amount"
+                  },
+                  "status": {
+                    "type": "string",
+                    "description": "Payment status"
+                  }
+                }
+              }
+            }
+          }
+        },
+        "responses": {
+          "303": {
+            "description": "Redirect to frontend with payment status",
+            "headers": {
+              "Location": {
+                "description": "Redirect URL with status parameters",
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Bad request - missing order ID or validation failed",
+            "content": {
+              "text/plain": {
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Order not found in database",
+            "content": {
+              "text/plain": {
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "Internal server error",
+            "content": {
+              "text/plain": {
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/orderStatus/{orderId}": {
+      "get": {
+        "summary": "Get order status",
+        "description": "Retrieves the current status of an order from both database and payment gateway",
+        "tags": ["Payments"],
+        "parameters": [
+          {
+            "name": "orderId",
+            "in": "path",
+            "required": true,
+            "description": "Order identifier",
+            "schema": {
+              "type": "string"
+            },
+            "example": "order_123456789"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Order status retrieved successfully",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "success": {
+                      "type": "boolean"
+                    },
+                    "order_id": {
+                      "type": "string"
+                    },
+                    "amount": {
+                      "type": "number"
+                    },
+                    "status": {
+                      "type": "string"
+                    },
+                    "database_status": {
+                      "type": "string"
+                    },
+                    "gateway_status": {
+                      "type": "string"
+                    },
+                    "transaction_details": {
+                      "$ref": "#/components/schemas/PaymentTransaction"
+                    },
+                    "gateway_response": {
+                      "$ref": "#/components/schemas/OrderStatusResponse"
+                    },
+                    "last_updated": {
+                      "type": "string",
+                      "format": "date-time"
+                    }
+                  }
+                },
+                "example": {
+                  "success": true,
+                  "order_id": "order_123456789",
+                  "amount": 100,
+                  "status": "CHARGED",
+                  "database_status": "CHARGED",
+                  "gateway_status": "CHARGED",
+                  "transaction_details": {
+                    "transaction_id": "txn_123456",
+                    "amount": 100,
+                    "status": "CHARGED"
+                  },
+                  "gateway_response": {
+                    "status": "CHARGED",
+                    "amount": 100
+                  },
+                  "last_updated": "2023-12-01T10:30:00Z"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Order not found",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "Internal server error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/initiateRefund": {
+      "post": {
+        "summary": "Initiate refund",
+        "description": "Initiates a refund for a completed payment",
+        "tags": ["Refunds"],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "required": ["order_id", "amount"],
+                "properties": {
+                  "order_id": {
+                    "type": "string",
+                    "description": "Order identifier to refund",
+                    "example": "order_123456789"
+                  },
+                  "amount": {
+                    "type": "number",
+                    "description": "Refund amount",
+                    "example": 100
+                  },
+                  "unique_request_id": {
+                    "type": "string",
+                    "description": "Unique refund request identifier (optional, auto-generated if not provided)",
+                    "example": "refund_1703123456789"
+                  }
+                }
+              },
+              "example": {
+                "order_id": "order_123456789",
+                "amount": 100,
+                "unique_request_id": "refund_1703123456789"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Refund initiated successfully",
+            "content": {
+              "text/html": {
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Order not found in database",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "Internal server error",
+            "content": {
+              "text/plain": {
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          }
+        }
+      }
+    }
+  },
+  "components": {
+    "schemas": {
+      "PaymentOrder": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "integer"
+          },
+          "order_id": {
+            "type": "string"
+          },
+          "amount": {
+            "type": "number"
+          },
+          "customer_id": {
+            "type": "string"
+          },
+          "return_url": {
+            "type": "string"
+          },
+          "status": {
+            "type": "string"
+          },
+          "payment_page_client_id": {
+            "type": "string"
+          },
+          "session_data": {
+            "type": "string"
+          },
+          "session_id": {
+            "type": "string"
+          },
+          "payment_links": {
+            "type": "string"
+          },
+          "order_expiry": {
+            "type": "string"
+          },
+          "sdk_payload": {
+            "type": "string"
+          },
+          "created_at": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "updated_at": {
+            "type": "string",
+            "format": "date-time"
+          }
+        }
+      },
+      "PaymentTransaction": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "integer"
+          },
+          "order_id": {
+            "type": "string"
+          },
+          "transaction_id": {
+            "type": "string"
+          },
+          "amount": {
+            "type": "number"
+          },
+          "status": {
+            "type": "string"
+          },
+          "response_data": {
+            "type": "string"
+          },
+          "created_at": {
+            "type": "string",
+            "format": "date-time"
+          }
+        }
+      },
+      "Refund": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "integer"
+          },
+          "order_id": {
+            "type": "string"
+          },
+          "refund_id": {
+            "type": "string"
+          },
+          "amount": {
+            "type": "number"
+          },
+          "status": {
+            "type": "string"
+          },
+          "unique_request_id": {
+            "type": "string"
+          },
+          "created_at": {
+            "type": "string",
+            "format": "date-time"
+          }
+        }
+      },
+      "OrderSessionResponse": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string",
+            "description": "Session ID"
+          },
+          "status": {
+            "type": "string",
+            "description": "Order status"
+          },
+          "payment_links": {
+            "type": "object",
+            "properties": {
+              "web": {
+                "type": "string",
+                "description": "Web payment link"
+              },
+              "mobile": {
+                "type": "string",
+                "description": "Mobile payment link"
+              }
+            }
+          },
+          "order_expiry": {
+            "type": "string",
+            "description": "Order expiry timestamp"
+          },
+          "sdk_payload": {
+            "type": "object",
+            "description": "SDK configuration payload"
+          }
+        }
+      },
+      "OrderStatusResponse": {
+        "type": "object",
+        "properties": {
+          "status": {
+            "type": "string",
+            "description": "Payment status (CHARGED, PENDING, AUTHORIZATION_FAILED, etc.)"
+          },
+          "amount": {
+            "type": "number",
+            "description": "Payment amount"
+          },
+          "transaction_id": {
+            "type": "string",
+            "description": "Transaction identifier"
+          }
+        }
+      },
+      "Error": {
+        "type": "object",
+        "properties": {
+          "success": {
+            "type": "boolean",
+            "example": false
+          },
+          "message": {
+            "type": "string",
+            "example": "Error message"
+          },
+          "error": {
+            "type": "string",
+            "example": "Detailed error information"
+          }
+        }
+      }
+    },
+    "securitySchemes": {
+      "ApiKeyAuth": {
+        "type": "apiKey",
+        "in": "header",
+        "name": "X-API-Key"
+      }
+    }
+  },
+  "tags": [
+    {
+      "name": "Payments",
+      "description": "Payment-related operations"
+    },
+    {
+      "name": "Refunds",
+      "description": "Refund-related operations"
+    },
+    {
+      "name": "Testing",
+      "description": "Testing and development endpoints"
+    }
+  ]
+}

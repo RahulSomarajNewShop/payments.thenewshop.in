@@ -7,6 +7,11 @@
   "scripts": {
     "start": "node index.js",
     "start:dev": "nodemon index.js",
+    "start:quiet": "node scripts/run-with-logs.js ERROR",
+    "start:minimal": "node scripts/run-with-logs.js WARN",
+    "start:normal": "node scripts/run-with-logs.js INFO",
+    "start:verbose": "node scripts/run-with-logs.js DEBUG",
+    "start:debug": "node scripts/run-with-logs.js TRACE",
     "build": "tsc",
     "test": "jest"
   },

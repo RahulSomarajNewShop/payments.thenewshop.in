@@ -9,6 +9,7 @@ const {
 const crypto = require("crypto");
 const path = require("path");
 const { query } = require("./database");
+const logger = require("./utils/logger");
 const app = express();
 const port = process.env.PORT || 5000;
 
@@ -22,13 +23,16 @@ app.get("/test/generateOrder", (req, res) => {
     .substr(2, 9)}`;
   const poId = `PO_${Date.now()}_${Math.floor(Math.random() * 1000)}`;
 
-  res.json({
+  const testData = {
     order_id: orderId,
     po_id: poId,
     amount: randomAmount,
     customer_id: `test_customer_${Math.floor(Math.random() * 1000)}`,
     message: "Use these parameters to test payment flow",
-  });
+  };
+
+  logger.debug("Generated test order data", testData);
+  res.json(testData);
 });
 
 // Test endpoint to view all orders
@@ -44,13 +48,20 @@ app.get("/test/orders", async (req, res) => {
       "SELECT * FROM refunds ORDER BY created_at DESC"
     );
 
-    res.json({
+    const result = {
       orders: orders.rows,
       transactions: transactions.rows,
       refunds: refunds.rows,
+    };
+
+    logger.debug("Retrieved test data", {
+      orderCount: orders.rows.length,
+      transactionCount: transactions.rows.length,
+      refundCount: refunds.rows.length,
     });
+    res.json(result);
   } catch (error) {
-    console.error("Error fetching test data:", error);
+    logger.error("Error fetching test data", error);
     res.status(500).json({ error: "Failed to fetch test data" });
   }
 });
@@ -60,6 +71,16 @@ app.use(cors());
 // Middleware to parse URL-encoded bodies (e.g., form submissions)
 app.use(express.urlencoded({ extended: true }));
 app.use(express.static("public"));
+
+// Serve Swagger documentation
+app.get("/swagger.json", (_, res) => {
+  res.sendFile(path.join(__dirname, "swagger.json"));
+});
+
+app.get("/docs", (_, res) => {
+  res.sendFile(path.join(__dirname, "public", "swagger.html"));
+});
+
 app.get("/", (_, res) =>
   res.sendFile(path.join(__dirname, "public", "initiatePaymentDataForm.html"))
 );
@@ -68,13 +89,13 @@ app.get("/", (_, res) =>
 app.use(express.json());
 
 app.post("/initiatePayment", async (req, res) => {
-  console.log("Payment initiation request:", req.body);
+  logger.payment("Payment initiation request", req.body);
   const orderId = req.body.order_id ?? req.body.orderId;
   const poId = req.body.poId; // Purchase Order ID
   const amount = req.body.amount || 1 + crypto.randomInt(100);
   const customerId = req.body.customerId;
   const returnUrl = `https://uatpayments.thenewshop.in/handlePaymentResponse`;
-  console.log("Return URL:", returnUrl);
+  logger.debug("Return URL", { returnUrl });
   const paymentHandler = PaymentHandler.getInstance();
 
   // Insert orderId, poId, and amount into the database
@@ -83,11 +104,11 @@ app.post("/initiatePayment", async (req, res) => {
       `INSERT INTO payment_orders (order_id, amount, customer_id, return_url) VALUES ($1, $2, $3, $4)`,
       [orderId, amount, customerId, returnUrl]
     );
-    console.log(
+    logger.db(
       `Order ${orderId} with amount ${amount} stored in database successfully`
     );
   } catch (dbError) {
-    console.error("Failed to insert order into database:", dbError);
+    logger.error("Failed to insert order into database", dbError);
     return res
       .status(500)
       .json({ success: false, message: "Failed to create order in database" });
@@ -105,7 +126,7 @@ app.post("/initiatePayment", async (req, res) => {
       // PaymentHandler will read it from config.json file
       payment_page_client_id: paymentHandler.getPaymentPageClientId(),
     });
-    console.log("Order session response:", orderSessionResp);
+    logger.payment("Order session response", orderSessionResp);
 
     // Update the order with complete session details
     await query(
@@ -130,12 +151,12 @@ app.post("/initiatePayment", async (req, res) => {
         orderId,
       ]
     );
-    console.log(`Order ${orderId} session data saved successfully`);
+    logger.db(`Order ${orderId} session data saved successfully`);
 
     return res.send({ orderSessionResp });
     // return res.redirect(orderSessionResp.payment_links.web);
   } catch (error) {
-    console.log(error);
+    logger.error("Payment initiation error", error);
     // [MERCHANT_TODO]:- please handle errors
     if (error instanceof APIException) {
       return res.send("PaymentHandler threw some error");
@@ -147,42 +168,42 @@ app.post("/initiatePayment", async (req, res) => {
 
 app.post("/handlePaymentResponse", async (req, res) => {
   /// this should be the return url
-  console.log("Payment Response received:", req.body);
+  logger.payment("Payment Response received", req.body);
   const FRONTEND_BASE =
     process.env.FRONTEND_BASE_URL || "https://uatb2b.thenewshop.in";
   const orderId = req.body.order_id || req.body.orderId;
   const paymentHandler = PaymentHandler.getInstance();
 
   if (orderId === undefined) {
-    console.error("Order ID is missing in payment response");
+    logger.error("Order ID is missing in payment response");
     return res.status(400).send("Order ID is missing");
   }
 
   try {
     // Step 1: Validate HMAC signature first
-    console.log("Validating HMAC signature...");
+    logger.debug("Validating HMAC signature...");
     if (
       validateHMAC_SHA256(req.body, paymentHandler.getResponseKey()) === false
     ) {
-      console.error("HMAC signature validation failed for order:", orderId);
+      logger.error("HMAC signature validation failed for order", { orderId });
       return res.status(400).send("Signature verification failed");
     }
-    console.log("HMAC signature validation successful");
+    logger.debug("HMAC signature validation successful");
 
     // Step 2: Get order status from payment gateway
-    console.log("Fetching order status from payment gateway...");
+    logger.debug("Fetching order status from payment gateway...");
     const orderStatusResp = await paymentHandler.orderStatus(orderId);
-    console.log("Order status response:", orderStatusResp);
+    logger.payment("Order status response", orderStatusResp);
 
     // Step 3: Validate order exists in database and amount matches
-    console.log("Validating order in database...");
+    logger.debug("Validating order in database...");
     const dbOrder = await query(
       "SELECT * FROM payment_orders WHERE order_id = $1",
       [orderId]
     );
 
     if (dbOrder.rows.length === 0) {
-      console.error("Order not found in database:", orderId);
+      logger.error("Order not found in database", { orderId });
       return res.status(404).send("Order not found in database");
     }
 
@@ -193,13 +214,15 @@ app.post("/handlePaymentResponse", async (req, res) => {
     const storedAmount = parseFloat(storedOrder.amount);
 
     if (responseAmount !== storedAmount) {
-      console.error(
-        `Amount mismatch for order ${orderId}: stored=${storedAmount}, received=${responseAmount}`
-      );
+      logger.error("Amount mismatch for order", {
+        orderId,
+        storedAmount,
+        responseAmount,
+      });
       return res.status(400).send("Amount mismatch detected");
     }
 
-    console.log("Database validation successful - amount matches");
+    logger.debug("Database validation successful - amount matches");
 
     // Step 4: Update order status in database
     const orderStatus = orderStatusResp.status;
@@ -207,7 +230,7 @@ app.post("/handlePaymentResponse", async (req, res) => {
       orderStatus,
       orderId,
     ]);
-    console.log(`Order ${orderId} status updated to ${orderStatus}`);
+    logger.db(`Order ${orderId} status updated to ${orderStatus}`);
 
     // Step 5: Store transaction details
     await query(
@@ -221,7 +244,7 @@ app.post("/handlePaymentResponse", async (req, res) => {
         JSON.stringify({ ...req.body, ...orderStatusResp }),
       ]
     );
-    console.log("Transaction details stored in database");
+    logger.db("Transaction details stored in database");
 
     // Step 6: Determine response message
     let message = "";
@@ -244,7 +267,7 @@ app.post("/handlePaymentResponse", async (req, res) => {
         break;
     }
 
-    console.log(
+    logger.info(
       `Payment processing completed for order ${orderId}: ${message}`
     );
 
@@ -259,7 +282,7 @@ app.post("/handlePaymentResponse", async (req, res) => {
 
     return res.redirect(303, redirectUrl.toString());
   } catch (error) {
-    console.error("Error in handlePaymentResponse:", error);
+    logger.error("Error in handlePaymentResponse", error);
     // [MERCHANT_TODO]:- please handle errors
     if (error instanceof APIException) {
       return res.status(500).send("PaymentHandler threw some error");
@@ -275,7 +298,7 @@ app.get("/orderStatus/:orderId", async (req, res) => {
   const paymentHandler = PaymentHandler.getInstance();
 
   try {
-    console.log(`Status inquiry for order: ${orderId}`);
+    logger.debug(`Status inquiry for order: ${orderId}`);
 
     // Step 1: Check database first
     const dbOrder = await query(
@@ -294,7 +317,7 @@ app.get("/orderStatus/:orderId", async (req, res) => {
 
     // Step 2: Get latest status from payment gateway
     const orderStatusResp = await paymentHandler.orderStatus(orderId);
-    console.log("Payment gateway status response:", orderStatusResp);
+    logger.payment("Payment gateway status response", orderStatusResp);
 
     // Step 3: Update database with latest status
     await query("UPDATE payment_orders SET status = $1 WHERE order_id = $2", [
@@ -320,10 +343,10 @@ app.get("/orderStatus/:orderId", async (req, res) => {
       last_updated: new Date().toISOString(),
     };
 
-    console.log(`Status inquiry completed for order ${orderId}`);
+    logger.debug(`Status inquiry completed for order ${orderId}`);
     return res.json(response);
   } catch (error) {
-    console.error("Error in orderStatus API:", error);
+    logger.error("Error in orderStatus API", error);
     if (error instanceof APIException) {
       return res.status(500).json({
         success: false,
@@ -343,6 +366,8 @@ app.post("/initiateRefund", async (req, res) => {
   const paymentHandler = PaymentHandler.getInstance();
 
   try {
+    logger.debug("Refund initiation request", req.body);
+
     // Validate order exists in database
     const dbOrder = await query(
       "SELECT * FROM payment_orders WHERE order_id = $1",
@@ -350,6 +375,9 @@ app.post("/initiateRefund", async (req, res) => {
     );
 
     if (dbOrder.rows.length === 0) {
+      logger.error("Order not found for refund", {
+        orderId: req.body.order_id,
+      });
       return res.status(404).json({
         success: false,
         message: "Order not found in database",
@@ -361,6 +389,8 @@ app.post("/initiateRefund", async (req, res) => {
       amount: req.body.amount,
       unique_request_id: req.body.unique_request_id || `refund_${Date.now()}`,
     });
+
+    logger.payment("Refund response", refundResp);
 
     // Store refund details in database
     await query(
@@ -375,6 +405,8 @@ app.post("/initiateRefund", async (req, res) => {
       ]
     );
 
+    logger.db("Refund details stored in database");
+
     const html = makeOrderStatusResponse(
       "Merchant Refund Page",
       `Refund status:- ${refundResp.status}`,
@@ -384,7 +416,7 @@ app.post("/initiateRefund", async (req, res) => {
     res.set("Content-Type", "text/html");
     return res.send(html);
   } catch (error) {
-    console.error(error);
+    logger.error("Refund initiation error", error);
     // [MERCHANT_TODO]:- please handle errors
     if (error instanceof APIException) {
       return res.send("PaymentHandler threw some error");
@@ -435,5 +467,7 @@ const makeOrderStatusResponse = (title, message, req, response) => {
 };
 
 app.listen(port, () => {
-  console.log(`Server is running on http://localhost:${port}`);
+  logger.info(`Server is running on http://localhost:${port}`);
+  logger.info(`API Documentation available at http://localhost:${port}/docs`);
+  logger.info(`Current log level: ${process.env.LOG_LEVEL || "INFO"}`);
 });
