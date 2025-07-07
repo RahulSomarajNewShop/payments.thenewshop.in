@@ -105,7 +105,7 @@ app.post("/initiatePayment", async (req, res) => {
 
       // Check if PO exists and get its total value
       const poResult = await query(
-        `SELECT id, "poNumber", "totalValue", status FROM purchaseorder WHERE "id" = $1 AND "deletedAt" IS NULL`,
+        `SELECT id, "poNumber", "totalValue", status FROM purchaseorder WHERE "poNumber" = $1 AND "deletedAt" IS NULL`,
         [poId]
       );
 
@@ -122,6 +122,8 @@ app.post("/initiatePayment", async (req, res) => {
       logger.debug(
         `PO found: ${po.poNumber}, Total Value: ${po.totalValue}, Status: ${po.status}`
       );
+
+
 
       // Validate amount matches PO total value
       const poAmount = parseFloat(po.totalValue);
