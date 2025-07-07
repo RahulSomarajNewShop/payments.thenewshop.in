@@ -98,6 +98,62 @@ app.post("/initiatePayment", async (req, res) => {
   logger.debug("Return URL", { returnUrl });
   const paymentHandler = PaymentHandler.getInstance();
 
+  // Validate PO if poId is provided
+  if (poId) {
+    try {
+      logger.debug(`Validating PO: ${poId}`);
+
+      // Check if PO exists and get its total value
+      const poResult = await query(
+        `SELECT id, "poNumber", "totalValue", status FROM purchaseorder WHERE "id" = $1 AND "deletedAt" IS NULL`,
+        [poId]
+      );
+
+      if (poResult.rows.length === 0) {
+        logger.error(`PO not found: ${poId}`);
+        return res.status(409).json({
+          success: false,
+          message: "Purchase Order not found",
+          error: "PO_NOT_FOUND",
+        });
+      }
+
+      const po = poResult.rows[0];
+      logger.debug(
+        `PO found: ${po.poNumber}, Total Value: ${po.totalValue}, Status: ${po.status}`
+      );
+
+      // Validate amount matches PO total value
+      const poAmount = parseFloat(po.totalValue);
+      const requestAmount = parseFloat(amount);
+
+      if (poAmount !== requestAmount) {
+        logger.error(
+          `Amount mismatch for PO ${poId}: PO amount=${poAmount}, Request amount=${requestAmount}`
+        );
+        return res.status(400).json({
+          success: false,
+          message: "Payment amount does not match Purchase Order total value",
+          error: "AMOUNT_MISMATCH",
+          poAmount: poAmount,
+          requestAmount: requestAmount,
+          poNumber: po.poNumber,
+        });
+      }
+
+      logger.debug(`PO validation successful: ${poId}, Amount: ${amount}`);
+    } catch (poError) {
+      logger.error("Error validating PO", poError);
+      return res.status(500).json({
+        success: false,
+        message: "Error validating Purchase Order",
+        error: "PO_VALIDATION_ERROR",
+      });
+    }
+  } else {
+    logger.debug("No PO ID provided, skipping PO validation");
+  }
+
   // Insert orderId, poId, and amount into the database
   try {
     await query(
@@ -232,10 +288,17 @@ app.post("/handlePaymentResponse", async (req, res) => {
     ]);
     logger.db(`Order ${orderId} status updated to ${orderStatus}`);
 
-    // Step 5: Store transaction details
+    // Step 5: Store transaction details (upsert - insert or update)
     await query(
-      `INSERT INTO payment_transactions (order_id, transaction_id, amount, status, response_data) 
-       VALUES ($1, $2, $3, $4, $5)`,
+      `INSERT INTO payment_transactions (order_id, transaction_id, amount, status, response_data, created_at, updated_at) 
+       VALUES ($1, $2, $3, $4, $5, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)
+       ON CONFLICT (order_id) 
+       DO UPDATE SET 
+         transaction_id = EXCLUDED.transaction_id,
+         amount = EXCLUDED.amount,
+         status = EXCLUDED.status,
+         response_data = EXCLUDED.response_data,
+         updated_at = CURRENT_TIMESTAMP`,
       [
         orderId,
         req.body.transaction_id || orderStatusResp.transaction_id,
@@ -244,7 +307,7 @@ app.post("/handlePaymentResponse", async (req, res) => {
         JSON.stringify({ ...req.body, ...orderStatusResp }),
       ]
     );
-    logger.db("Transaction details stored in database");
+    logger.db("Transaction details stored/updated in database");
 
     // Step 6: Determine response message
     let message = "";
