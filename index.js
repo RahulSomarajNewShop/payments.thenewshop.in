@@ -120,11 +120,15 @@ app.post("/initiatePayment", async (req, res) => {
 
   // Validate PO if poId is provided
   const poIdToValidate = orderId.replace(/^order_/, "");
+  let poData = null;
+  let amount = null;
+
   if (poIdToValidate) {
     try {
       logger.debug(`Validating PO: ${poIdToValidate}`);
 
       // Check if PO exists and get its total value
+      console.log(poIdToValidate);
       const poResult = await query(
         `SELECT id, "poNumber", "totalValue", status FROM purchaseorder WHERE "poNumber" = $1 AND "deletedAt" IS NULL`,
         [poIdToValidate]
@@ -138,11 +142,12 @@ app.post("/initiatePayment", async (req, res) => {
           error: "PO_NOT_FOUND",
         });
       }
-      const po = poResult.rows[0];
-      const amount = parseFloat(po.totalValue);
+
+      poData = poResult.rows[0];
+      amount = parseFloat(poData.totalValue);
 
       logger.debug(
-        `PO found: ${po.poNumber}, Total Value: ${po.totalValue}, Status: ${po.status}`
+        `PO found: ${poData.poNumber}, Total Value: ${poData.totalValue}, Status: ${poData.status}`
       );
 
       // Amount is now sourced from database, no need for validation
@@ -172,14 +177,32 @@ app.post("/initiatePayment", async (req, res) => {
 
   // Insert orderId, poId, and amount into the database
   try {
+    console.log("Inserting with data:", {
+      orderId,
+      poId: poData.id,
+      amount,
+      customerId,
+      returnUrl,
+    });
+
+    // First, let's check the table structure
+    const tableInfo = await query(`
+      SELECT column_name, data_type 
+      FROM information_schema.columns 
+      WHERE table_name = 'payment_orders' 
+      ORDER BY ordinal_position
+    `);
+    console.log("Table structure:", tableInfo.rows);
+
     await query(
       `INSERT INTO payment_orders (order_id, "poId", amount, customer_id, return_url, currency) VALUES ($1, $2, $3, $4, $5, $6)`,
-      [orderId, poResult.rows[0].id, amount, customerId, returnUrl, "INR"]
+      [orderId, poData.id, amount, customerId, returnUrl, "INR"]
     );
     logger.db(
-      `Order ${orderId} with PO ID ${poResult.rows[0].id} and amount ${amount} stored in database successfully`
+      `Order ${orderId} with PO ID ${poData.id} and amount ${amount} stored in database successfully`
     );
   } catch (dbError) {
+    console.log(dbError);
     logger.error("Failed to insert order into database", dbError);
     return res
       .status(500)
