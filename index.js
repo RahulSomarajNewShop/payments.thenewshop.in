@@ -111,57 +111,46 @@ app.use(express.json());
 app.post("/initiatePayment", async (req, res) => {
   logger.payment("Payment initiation request", req.body);
   const orderId = req.body.order_id ?? req.body.orderId;
-  const poId = req.body.poId; // Purchase Order ID
-  const amount = req.body.amount || 1 + crypto.randomInt(100);
+  // const poId = req.body.poId; // Purchase Order ID
+  // const amount = req.body.amount || 1 + crypto.randomInt(100);
   const customerId = req.body.customerId;
   const returnUrl = `https://uatpayments.thenewshop.in/handlePaymentResponse`;
   logger.debug("Return URL", { returnUrl });
   const paymentHandler = PaymentHandler.getInstance();
 
   // Validate PO if poId is provided
-  if (poId) {
+  const poIdToValidate = orderId.replace(/^order_/, "");
+  if (poIdToValidate) {
     try {
-      logger.debug(`Validating PO: ${poId}`);
+      logger.debug(`Validating PO: ${poIdToValidate}`);
 
       // Check if PO exists and get its total value
       const poResult = await query(
         `SELECT id, "poNumber", "totalValue", status FROM purchaseorder WHERE "poNumber" = $1 AND "deletedAt" IS NULL`,
-        [poId]
+        [poIdToValidate]
       );
 
       if (poResult.rows.length === 0) {
-        logger.error(`PO not found: ${poId}`);
+        logger.error(`PO not found: ${poIdToValidate}`);
         return res.status(409).json({
           success: false,
           message: "Purchase Order not found",
           error: "PO_NOT_FOUND",
         });
       }
-
       const po = poResult.rows[0];
+      const amount = parseFloat(po.totalValue);
+
       logger.debug(
         `PO found: ${po.poNumber}, Total Value: ${po.totalValue}, Status: ${po.status}`
       );
 
-      // Validate amount matches PO total value
-      const poAmount = parseFloat(po.totalValue);
-      const requestAmount = parseFloat(amount);
+      // Amount is now sourced from database, no need for validation
+      logger.debug(`Using amount from database: ${amount}`);
 
-      if (poAmount !== requestAmount) {
-        logger.error(
-          `Amount mismatch for PO ${poId}: PO amount=${poAmount}, Request amount=${requestAmount}`
-        );
-        return res.status(400).json({
-          success: false,
-          message: "Payment amount does not match Purchase Order total value",
-          error: "AMOUNT_MISMATCH",
-          poAmount: poAmount,
-          requestAmount: requestAmount,
-          poNumber: po.poNumber,
-        });
-      }
-
-      logger.debug(`PO validation successful: ${poId}, Amount: ${amount}`);
+      logger.debug(
+        `PO validation successful: ${poIdToValidate}, Amount: ${amount}`
+      );
     } catch (poError) {
       logger.error("Error validating PO", poError);
       return res.status(500).json({
@@ -172,16 +161,23 @@ app.post("/initiatePayment", async (req, res) => {
     }
   } else {
     logger.debug("No PO ID provided, skipping PO validation");
+    // For non-PO transactions, we need to handle amount differently
+    // This is a potential security risk - consider requiring PO for all transactions
+    return res.status(400).json({
+      success: false,
+      message: "Purchase Order ID is required for payment initiation",
+      error: "PO_REQUIRED",
+    });
   }
 
   // Insert orderId, poId, and amount into the database
   try {
     await query(
-      `INSERT INTO payment_orders (order_id, amount, customer_id, return_url) VALUES ($1, $2, $3, $4)`,
-      [orderId, amount, customerId, returnUrl]
+      `INSERT INTO payment_orders (order_id, "poId", amount, customer_id, return_url, currency) VALUES ($1, $2, $3, $4, $5, $6)`,
+      [orderId, poResult.rows[0].id, amount, customerId, returnUrl, "INR"]
     );
     logger.db(
-      `Order ${orderId} with amount ${amount} stored in database successfully`
+      `Order ${orderId} with PO ID ${poResult.rows[0].id} and amount ${amount} stored in database successfully`
     );
   } catch (dbError) {
     logger.error("Failed to insert order into database", dbError);
